@@ -12,7 +12,8 @@ import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.transport.TransportAddress;
 import org.elasticsearch.xpack.client.PreBuiltXPackTransportClient;
 
-public class App {
+public class BasicTransportNoAuth {
+    
     public static void main(final String[] args) {
 
 

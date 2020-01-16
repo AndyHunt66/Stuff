@@ -4,6 +4,7 @@
   xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
 
+
   <groupId>co.elastic.support</groupId>
   <artifactId>transporttest</artifactId>
   <version>1.0-SNAPSHOT</version>
@@ -16,6 +17,7 @@
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <maven.compiler.source>1.7</maven.compiler.source>
     <maven.compiler.target>1.7</maven.compiler.target>
+    		<es.version>5.6.6</es.version> 
   </properties>
  <repositories>
   <repository>
@@ -41,7 +43,8 @@
     <dependency>
       <groupId>org.elasticsearch</groupId>
       <artifactId>elasticsearch</artifactId>
-      <version>6.8.0</version>
+      <!-- <version>6.8.0</version> -->
+      <version>${es.version}</version>
     </dependency>
   
  
@@ -51,13 +54,15 @@
        <dependency>
       <groupId>org.elasticsearch.plugin</groupId>
       <artifactId>x-pack-core</artifactId>
-      <version>6.8.0</version>
+      <!-- <version>6.8.0</version> -->
+      <version>${es.version}</version>
       <scope>compile</scope>
     </dependency>
     <dependency>
          <groupId>org.elasticsearch.client</groupId>
          <artifactId>x-pack-transport</artifactId>
-              <version>6.8.0</version>
+              <!-- <version>6.8.0</version> -->
+              <version>${es.version}</version>
       </dependency>
 
   </dependencies>
