@@ -11,13 +11,14 @@ use LWP::UserAgent;
 use LWP::Protocol::https;
 use Date::Calc qw(Week_Number); 
 
+## Turn on Autoflush output
+$|++;
 
 my $esHostname = "127.0.0.1";
 my $esPort = 9200;
 #my $esUsername = "elastic";
 #my $esPassword="elastic";
 my $esUsername = "elastic";
-#my $esPassword="ydQJZDL7lD0SzcuDWUNhOE9o";
 my $esPassword="AoEPoc6IWNfr5jBYjGHpe3EF";
 
 my $esScheme = "http";
@@ -26,9 +27,8 @@ my $indexPrefix = "edsm-";
 
 my $timestart = localtime();
 my $counter = 0;
-my $limit = 1000;
-
-my $batchSize = 10;
+my $limit = 0;   ## Set limit to zero to disable
+my $batchSize = 100;
 
 my $endpoint = "tcp://eddn.edcd.io:9500"; ## Incoming ZMQ data
 
@@ -37,7 +37,7 @@ my $endpoint = "tcp://eddn.edcd.io:9500"; ## Incoming ZMQ data
 #my $esEndpoint = "http://127.0.0.1:9200/";#fsd_jump/_doc";
 #my $esEndpoint = "https://eba44d3d3d5f4f02b624f84222c46ca0.europe-west1.gcp.cloud.es.io:9243/";
 my $esEndpoint = "https://d40b8389cbe74a7bbdd2fc27fcc2a118.us-east-1.aws.found.io:9243/";
-
+my $bulkEndpoint = $esEndpoint."_bulk/";
 
 #/_security/_authenticate;
 my $ctx      = ZMQ::FFI->new();
@@ -57,52 +57,27 @@ $ua->ssl_opts( #$key => $value
                 
 
                 
-# $ua->credentials($esEndpoint, 'security', 'elastic', 'aZZ3Mp03CyoZLs5WDxZKJ9BU');    
-#$ua->authorization_basic('elastic', 'elastic');   
-# my $req = HTTP::Request->new(GET => $esEndpoint."_security/_authenticate?user=elastic&password=aZZ3Mp03CyoZLs5WDxZKJ9BU");
-# #$req->authorization_basic($esEndpoint, 'security','elastic','aZZ3Mp03CyoZLs5WDxZKJ9BU');
-# my $resp =  $ua->request($req);
 
-
-
-# print $resp->code."\n";
-# print $resp->content."\n";
-
-my %schemas;
-my %events;
 my $indexName;
+my $bulkData = "";
+my $batchCounter=0;
+
+
 my $s = $ctx->socket(ZMQ_SUB);
-
 $s->connect($endpoint);
-my $req = HTTP::Request->new();
-my $resp;
-my $totalTimeSleeping=0;
-my $totalTimeSending=0;
-my $t0;
-my $t1;
-my $seconds0;
-my $microseconds0;
-my $seconds1;
-my $microseconds1;
-my $elapsed;
-
 $s->subscribe('');
-while($counter < $limit)
+
+
+while(($limit == 0) || ($counter < $limit))
 {
   $counter++;
+  $batchCounter++;
 
-   $t0 = [gettimeofday];
-   # usleep 100_000 until ($s->has_pollin);
-  $elapsed = tv_interval ( $t0, [gettimeofday]);
-  $totalTimeSleeping=$totalTimeSleeping+$elapsed;
-  print $elapsed."    -     ".$totalTimeSleeping."\n";
-
-
-  #   ($seconds0, $microseconds0) = gettimeofday;
   # usleep 100_000 until ($s->has_pollin);
-  #   ($seconds1, $microseconds1) = gettimeofday;
-  #  $totalTimeSleeping+=$microseconds1-$microseconds0;
+
+
   my $data = $s->recv();
+
   # turn the json into a perl hash
   #	print OUTPUTFILE uncompress($data)."\n"; 
 
@@ -128,6 +103,8 @@ while($counter < $limit)
     die "Don't know which index to put this document into \n ".$pj."\n";
   }
 
+  $indexName = lc $indexName;
+
   my ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst) =  localtime();
   $year = $year+1900;
   $mon = $mon+1;
@@ -136,20 +113,14 @@ while($counter < $limit)
   ### Hourly indices
   #$indexName = $indexName."-".$year."-".sprintf("%02d", $mon)."-".sprintf("%02d", $mday)."-".sprintf("%02d", $hour);
 
-  if ($indexName eq "Scan")
-  {
-    ### Weekly indices
-    $indexName = $indexPrefix.$indexName."-".$year."-w".sprintf("%02d", $wnum);
-  }
-  else
-  {
-    ### Monthly indices
-    $indexName = $indexPrefix.$indexName."-".$year."-m".sprintf("%02d", $mon); 
-  }
+  ### Weekly indices
+  #$indexName = $indexPrefix.$indexName."-".$year."-w".sprintf("%02d", $wnum);
+
+  ### Monthly indices
+  $indexName = $indexPrefix.$indexName."-".$year."-m".sprintf("%02d", $mon); 
 
 
-
-
+  ## Move all data out from under the two or three main keys (such as "message"), to the top level.
   for my $key ( keys %$pj ) 
   {
     if ( $key eq '$schemaRef') 
@@ -183,59 +154,52 @@ while($counter < $limit)
   }
 
   $data = encode_json($pj);
-  #print ">>>>>>>>>>>>>>>>>>>>>>>\n$data\n <<<<<<<<<<<<<<<<<<<<\n";
-  # print  "schema = " . $schema ."\n";
-  # print "  software = ". $pj->{header}->{softwareName}."\n";
-  # print   "  StarSystem = ". $pj->{message}->{StarSystem}."\n";
 
-
- 
-  $req = HTTP::Request->new(POST => $esEndpoint.lc $indexName."/_doc");
-  if ($useCert ne 'yes')
+  $bulkData = $bulkData."{\"index\" : { \"_index\" : \"". $indexName."\" } }\n".$data."\n";
+ print ".";
+  if ($batchCounter >= $batchSize)
   {
-    $req->authorization_basic($esUsername,$esPassword);
-  } 
-
-  $req->header('content-type' => 'application/json');
-  #$req->content( uncompress($data));
-  $req->content( $data);
-
-  $t0 = [gettimeofday];
-  
-  $resp = $ua->request($req);
-  
-  
-  $elapsed = tv_interval ( $t0, [gettimeofday]);
-  $totalTimeSending=$totalTimeSending+$elapsed;
-  
-  #print "Request: ".$req->as_string   ."\n";
-  print    $indexName." -- ";
-  if ( defined $pj->{StarSystem})
-  {
-    print $pj->{StarSystem};
+    &sendData($bulkData);
+    $bulkData="";
+    $batchCounter = 0; 
   }
-  else
-  {
-    print "SOMETHING ";
-  } 
-  print "  --- Elastic response: ". $resp->code." -- ".$resp->message."\n";
-  #print "RESP: ".$resp->as_string ."\n";
-
-  #print $resp->message."\n";
-
-
-#  }
-#   else 
-#   {
-#       print "Schema: ".$schema."\n";
-#       die;
-#   }
-#   print "------\n";
 }
 print "Start Time: ".$timestart."\n";
 print "End   Time: ".localtime()."\n";
 print "Total events: ". $counter."\n";
-print "Total time sleeping :".$totalTimeSleeping."\n";
-print "Total time sending  :".$totalTimeSending."\n";
 
 $s->unsubscribe('');
+
+
+
+
+sub sendData()
+{
+  my $data = $_[0];
+  my $req = HTTP::Request->new(POST => $bulkEndpoint);
+  $req->authorization_basic($esUsername,$esPassword);
+  $req->header('content-type' => 'application/x-ndjson');
+  $req->content( $data);
+  my $resp = $ua->request($req);
+
+  print "\n Elastic response: ". $resp->code." -- ".$resp->message;
+  #print "Sent :".$data."\n";
+  #print "To: ".$bulkEndpoint."\n";
+  #print "RESP: ".$resp->content() ."\n";
+
+  if ($resp->content()=~/errors":([^,]*),"items"/)
+  { 
+    if ($1 eq "true")
+    {
+      die "   Errors in uploading to ES -". $resp->content()."\n";
+    }
+    else
+    {
+      print "  No errors...\n";
+    }
+  }
+  else
+  {
+    die "   Couldn't understand the repsonse : ". $resp->content()."\n";
+  }
+}
